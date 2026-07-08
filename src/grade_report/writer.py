@@ -14,6 +14,8 @@ from .model import ParsedSheet, Student
 HEADER_FONT = Font(bold=True)
 HEADER_FILL = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
 OVERALL_FILL = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+HIGHEST_FILL = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
+LOWEST_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 CENTER = Alignment(horizontal="center", vertical="center")
 
 METRIC_LABELS = ["A+", "A", "A以上", "B+", "B+以上", "B", "B以上", "C+", "C"]
@@ -143,14 +145,30 @@ def write_rank_segment(ws: Worksheet, students: List[Student], subject: str) -> 
         r = 2 + i
         ws.cell(row=r, column=1, value=seg_row.label)
         col = 2
+        avg_cols_by_class = {}
         for class_code in class_codes:
             first_val, second_val = seg_row.cells[class_code]
             ws.cell(row=r, column=col, value=first_val)
             ws.cell(row=r, column=col + 1, value=second_val)
+            avg_cols_by_class[class_code] = col
             col += 2
         if seg_row.is_average_row:
-            for c in range(1, max_col + 1):
-                ws.cell(row=r, column=c).fill = OVERALL_FILL
+            averages = {
+                class_code: seg_row.cells[class_code][0]
+                for class_code in class_codes
+                if seg_row.cells[class_code][0] is not None
+            }
+            if averages:
+                highest = max(averages.values())
+                lowest = min(averages.values())
+                for class_code, value in averages.items():
+                    fill = None
+                    if value == highest:
+                        fill = HIGHEST_FILL
+                    elif value == lowest:
+                        fill = LOWEST_FILL
+                    if fill is not None:
+                        ws.cell(row=r, column=avg_cols_by_class[class_code]).fill = fill
 
     ws.freeze_panes = "A2"
     _autofit(ws, max_col)
