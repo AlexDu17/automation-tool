@@ -129,14 +129,25 @@ class SegmentRow:
     is_average_row: bool = False
 
 
-def build_rank_segments(students: List[Student], subject: str) -> Tuple[List[str], List[SegmentRow]]:
+def build_rank_segments(
+    students: List[Student], subject: str, required_subjects: Optional[List[str]] = None
+) -> Tuple[List[str], List[SegmentRow]]:
+    """按 subject 的分数从高到低分段排名。
+
+    required_subjects：要计入本表，学生必须"全部"有成绩的科目列表；默认就是 [subject] 自己
+    （即普通科目缺考就排除）。合并出来的最终"英语"是特例——只要求"英语笔试"，"英语听说"
+    缺考不影响；"总分"则要求除"英语听说"外的所有科目都有成绩，缺任意一门主科都不计入。
+    """
+    required_subjects = required_subjects or [subject]
     class_codes = sorted_class_codes(students)
     per_class: Dict[str, List[Tuple[str, float]]] = {}
     for class_code in class_codes:
         entries = [
             (s.row.get("姓名"), s.score_of(subject))
             for s in students
-            if s.class_code == class_code and s.score_of(subject) is not None
+            if s.class_code == class_code
+            and s.score_of(subject) is not None
+            and all(s.score_of(req) is not None for req in required_subjects)
         ]
         entries.sort(key=lambda item: item[1], reverse=True)
         per_class[class_code] = entries

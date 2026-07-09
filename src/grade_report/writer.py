@@ -1,10 +1,10 @@
 """把统计结果写成一个多 Sheet 的 Excel 工作簿。"""
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -18,6 +18,9 @@ HIGHEST_FILL = PatternFill(start_color="92D050", end_color="92D050", fill_type="
 LOWEST_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 CENTER = Alignment(horizontal="center", vertical="center")
 
+_THIN_SIDE = Side(style="thin", color="000000")
+CELL_BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE, top=_THIN_SIDE, bottom=_THIN_SIDE)
+
 METRIC_LABELS = ["A+", "A", "A以上", "B+", "B+以上", "B", "B以上", "C+", "C"]
 
 
@@ -27,6 +30,13 @@ def _style_header_row(ws: Worksheet, row: int, ncols: int) -> None:
         cell.font = HEADER_FONT
         cell.fill = HEADER_FILL
         cell.alignment = CENTER
+
+
+def _apply_borders(ws: Worksheet, max_col: int, max_row: Optional[int] = None) -> None:
+    max_row = max_row if max_row is not None else ws.max_row
+    for row in ws.iter_rows(min_row=1, max_row=max_row, min_col=1, max_col=max_col):
+        for cell in row:
+            cell.border = CELL_BORDER
 
 
 def _autofit(ws: Worksheet, ncols: int, min_width: int = 8, max_width: int = 22) -> None:
@@ -77,7 +87,7 @@ def write_grade_distribution(ws: Worksheet, students: List[Student], subjects: L
                 ws.cell(row=row, column=col, value=count)
                 ratio_cell = ws.cell(row=row, column=col + 1, value=ratio)
                 if ratio is not None:
-                    ratio_cell.number_format = "0.0%"
+                    ratio_cell.number_format = "0.00%"
                 col += 2
             if dist_row.label == A.OVERALL_LABEL:
                 for c in range(1, max_col + 1):
@@ -87,6 +97,7 @@ def write_grade_distribution(ws: Worksheet, students: List[Student], subjects: L
         row += 1  # 空行分隔
 
     ws.freeze_panes = "A4"
+    _apply_borders(ws, max_col)
     _autofit(ws, max_col)
 
 
@@ -126,11 +137,14 @@ def write_subject_averages(ws: Worksheet, students: List[Student], subjects: Lis
                 ws.cell(row=r, column=c).fill = OVERALL_FILL
 
     ws.freeze_panes = "A3"
+    _apply_borders(ws, max_col)
     _autofit(ws, max_col)
 
 
-def write_rank_segment(ws: Worksheet, students: List[Student], subject: str) -> None:
-    class_codes, rows = A.build_rank_segments(students, subject)
+def write_rank_segment(
+    ws: Worksheet, students: List[Student], subject: str, required_subjects: Optional[List[str]] = None
+) -> None:
+    class_codes, rows = A.build_rank_segments(students, subject, required_subjects=required_subjects)
     max_col = 1 + len(class_codes) * 2
 
     ws.cell(row=1, column=1, value="分段")
@@ -171,6 +185,7 @@ def write_rank_segment(ws: Worksheet, students: List[Student], subject: str) -> 
                         ws.cell(row=r, column=avg_cols_by_class[class_code]).fill = fill
 
     ws.freeze_panes = "A2"
+    _apply_borders(ws, max_col)
     _autofit(ws, max_col)
 
 
@@ -204,6 +219,7 @@ def write_raw_scores(ws: Worksheet, students: List[Student], parsed: ParsedSheet
         ws.cell(row=r, column=col, value=rank)
 
     ws.freeze_panes = "A2"
+    _apply_borders(ws, max_col)
     _autofit(ws, max_col)
 
 
@@ -230,6 +246,7 @@ def write_class_roster(ws: Worksheet, students: List[Student], class_code: str, 
             col += 1
 
     ws.freeze_panes = "A2"
+    _apply_borders(ws, max_col)
     _autofit(ws, max_col)
 
 
@@ -252,14 +269,14 @@ def build_workbook(students: List[Student], parsed: ParsedSheet) -> Workbook:
 
     for subject in main_rank_subjects:
         ws = wb.create_sheet(f"{subject}成绩")
-        write_rank_segment(ws, students, subject)
+        write_rank_segment(ws, students, subject, required_subjects=parsed.rank_required_subjects.get(subject))
 
     ws = wb.create_sheet("原始成绩")
     write_raw_scores(ws, students, parsed)
 
     for subject in component_subjects:
         ws = wb.create_sheet(f"{subject}成绩")
-        write_rank_segment(ws, students, subject)
+        write_rank_segment(ws, students, subject, required_subjects=parsed.rank_required_subjects.get(subject))
 
     for class_code in class_codes:
         ws = wb.create_sheet(class_code)

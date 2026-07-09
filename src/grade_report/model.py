@@ -34,6 +34,10 @@ class ParsedSheet:
     subjects: List[Subject]
     component_display_names: Set[str]  # 被拆分英语等合并出来的原始分量，如{"英语笔试","英语听说"}
     total_display_name: str
+    # 分段排名表里，某科目是否计入某学生要看的"出勤科目"列表（全部有成绩才计入）。
+    # 不在这里的科目默认只看自己；"英语"（合并后的最终成绩）看"英语笔试"；
+    # "总分"看除了"英语听说"之外的所有科目（听说占比小，单独缺考不影响总分排名的参赛资格）。
+    rank_required_subjects: Dict[str, List[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -124,11 +128,33 @@ def parse_header(rows: List[List[Any]]) -> ParsedSheet:
     total_candidates = [s.display_name for s in subjects if s.name == "总分"]
     total_display_name = total_candidates[0] if total_candidates else subjects[-1].display_name
 
+    has_english_split = "英语合并" in subject_names and "英语" in subject_names
+    rank_required_subjects: Dict[str, List[str]] = {}
+
+    if has_english_split:
+        # "英语"（合并后的最终成绩）分段排名要看"英语笔试"是否缺考，而不是看合并分数本身。
+        rank_required_subjects["英语"] = ["英语笔试"]
+
+    # "总分"分段排名：要求所有科目都有成绩才计入，但"英语听说"占比小，单独缺考不算数——
+    # 且不重复要求"英语"（最终合并分），因为它和"英语笔试"本质是同一份卷子。
+    total_required: List[str] = []
+    seen = set()
+    for s in subjects:
+        name = s.display_name
+        if name == total_display_name or name in seen:
+            continue
+        if has_english_split and name in ("英语听说", "英语"):
+            continue
+        seen.add(name)
+        total_required.append(name)
+    rank_required_subjects[total_display_name] = total_required
+
     return ParsedSheet(
         base_columns=base_columns,
         subjects=subjects,
         component_display_names=component_display_names,
         total_display_name=total_display_name,
+        rank_required_subjects=rank_required_subjects,
     )
 
 
